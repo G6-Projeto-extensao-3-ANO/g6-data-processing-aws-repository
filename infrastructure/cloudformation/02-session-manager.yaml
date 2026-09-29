@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Configuração do AWS Systems Manager
+Resources:
+  SSMAssociation:
+    Type: AWS::SSM::Association
+
+    Properties:
+      Name: AWS-RunShellScript
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - Fn::ImportValue: Projeto-InstanceId
+
+      Parameters:
+        commands:
+          - systemctl enable amazon-ssm-agent
+          - systemctl start amazon-ssm-agent
+          - systemctl status amazon-ssm-agent --no-pager

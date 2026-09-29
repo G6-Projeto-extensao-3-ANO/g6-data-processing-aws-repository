@@ -1,0 +1,72 @@
+name: Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/infrastructure.yml'
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Validar VPC
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://infrastructure/cloudformation/01-vpc.yaml
+
+      - name: Validar Network
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://infrastructure/cloudformation/02-network.yaml
+
+      - name: Validar EC2
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://infrastructure/cloudformation/03-ec2.yaml
+
+      - name: Deploy VPC
+        run: |
+          aws cloudformation deploy \
+            --stack-name projeto-vpc \
+            --template-file infrastructure/cloudformation/01-vpc.yaml \
+            --region us-east-1
+
+      - name: Deploy Network
+        run: |
+          aws cloudformation deploy \
+            --stack-name projeto-network \
+            --template-file infrastructure/cloudformation/02-network.yaml \
+            --region us-east-1
+
+      - name: Obter Instance Profile
+        id: profile
+        run: |
+          PROFILE=$(aws iam list-instance-profiles-for-role \
+            --role-name LabRole \
+            --query 'InstanceProfiles[0].InstanceProfileName' \
+            --output text)
+          echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy EC2
+        run: |
+          aws cloudformation deploy \
+            --stack-name projeto-ec2 \
+            --template-file infrastructure/cloudformation/03-ec2.yaml \
+            --region us-east-1 \
+            --parameter-overrides \
+              LabInstanceProfile=${{ steps.profile.outputs.profile }}

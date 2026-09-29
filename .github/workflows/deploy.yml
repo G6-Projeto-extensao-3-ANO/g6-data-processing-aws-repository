@@ -1,0 +1,131 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/**'
+      - 'app/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Obter Instance ID
+        id: instance
+        run: |
+          INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name projeto-ec2 \
+            --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" \
+            --output text)
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "EC2: $INSTANCE_ID"
+
+      - name: Enviar install.sh
+        run: |
+          SCRIPT=$(base64 -w 0 scripts/install.sh)
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"mkdir -p /opt/scripts\",
+              \"echo $SCRIPT | base64 -d > /opt/scripts/install.sh\",
+              \"chmod +x /opt/scripts/install.sh\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+          echo "Install command: $COMMAND_ID"
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar envio do install.sh
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Executar install.sh
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["/opt/scripts/install.sh"]' \
+            --query "Command.CommandId" \
+            --output text)
+          echo "Install execution: $COMMAND_ID"
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar instalação
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Mostrar resultado da instalação
+        run: |
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}" \
+            --query "StandardOutputContent" \
+            --output text
+
+      - name: Enviar deploy.sh
+        run: |
+          SCRIPT=$(base64 -w 0 scripts/deploy.sh)
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"mkdir -p /opt/scripts\",
+              \"echo $SCRIPT | base64 -d > /opt/scripts/deploy.sh\",
+              \"chmod +x /opt/scripts/deploy.sh\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+          echo "Deploy script command: $COMMAND_ID"
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar envio do deploy.sh
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Executar deploy.sh
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["/opt/scripts/deploy.sh"]' \
+            --query "Command.CommandId" \
+            --output text)
+          echo "Deploy execution: $COMMAND_ID"
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar deploy
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Mostrar resultado do deploy
+        run: |
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}" \
+            --query "StandardOutputContent" \
+            --output text

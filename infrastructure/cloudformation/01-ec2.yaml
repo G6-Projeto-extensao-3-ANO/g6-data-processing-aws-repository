@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 Ubuntu para Processamento de Dados
+Parameters:
+  LabInstanceProfile:
+    Type: String
+    Description: Instance Profile associado a LabRole
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+
+  UbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+
+Resources:
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+
+    Properties:
+      GroupDescription: EC2 sem SSH - acesso via AWS Systems Manager
+      VpcId:
+        Fn::ImportValue: Projeto-VpcId
+
+      SecurityGroupIngress: []
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: sg-data-processing-ec2
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+
+    Properties:
+      ImageId:
+        Ref: UbuntuAmi
+
+      InstanceType:
+        Ref: InstanceType
+
+      SubnetId:
+        Fn::ImportValue: Projeto-PublicSubnetId
+
+      SecurityGroupIds:
+        - Ref: EC2SecurityGroup
+
+      IamInstanceProfile:
+        Ref: LabInstanceProfile
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+
+      Tags:
+        - Key: Name
+          Value: ec2-data-processing-ubuntu
+
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -e
+          echo "Inicializando EC2..."
+          apt-get update -y
+          echo "Verificando AWS Systems Manager Agent..."
+          systemctl enable amazon-ssm-agent || true
+          systemctl start amazon-ssm-agent || true
+          echo "Configuração inicial concluída."
+
+Outputs:
+  InstanceId:
+    Description: ID da EC2
+    Value:
+      Ref: EC2Instance
+    Export:
+      Name: Projeto-InstanceId
+
+  InstancePublicIp:
+    Description: IP publico da EC2
+    Value:
+      Fn::GetAtt:
+        - EC2Instance
+        - PublicIp
+
+  SecurityGroupId:
+    Description: Security Group da EC2
+    Value:
+      Ref: EC2SecurityGroup
