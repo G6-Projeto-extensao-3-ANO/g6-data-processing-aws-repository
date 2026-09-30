@@ -86,6 +86,7 @@ jobs:
             --template-file infrastructure/cloudformation/01-ec2.yaml \
             --region us-east-1 \
             --parameter-overrides \
-              LabInstanceProfile=${{ steps.profile.outputs.profile }}
-              SubnetId=${{ steps.subnet.outputs.subnet_id }}
-              VpcId=${{ steps.vpc.outputs.vpc_id }}
+              LabInstanceProfile=${{ steps.profile.outputs.profile }} \
+              SubnetId=${{ steps.subnet.outputs.subnet_id }} \
+              VpcId=${{ steps.vpc.outputs.vpc_id }} \
+              InstanceType=t3.small
