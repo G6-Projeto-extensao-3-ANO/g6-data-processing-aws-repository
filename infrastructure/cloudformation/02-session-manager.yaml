@@ -9,7 +9,7 @@ Resources:
       Targets:
         - Key: InstanceIds
           Values:
-            - Fn::ImportValue: Projeto-InstanceId
+            - Fn::ImportValue: Data-Processing-InstanceId
 
       Parameters:
         commands:
