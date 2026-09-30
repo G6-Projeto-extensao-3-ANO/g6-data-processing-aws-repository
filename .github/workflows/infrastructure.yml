@@ -24,34 +24,15 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
-      - name: Validar VPC
-        run: |
-          aws cloudformation validate-template \
-            --template-body file://infrastructure/cloudformation/01-vpc.yaml
-
-      - name: Validar Network
-        run: |
-          aws cloudformation validate-template \
-            --template-body file://infrastructure/cloudformation/02-network.yaml
-
       - name: Validar EC2
         run: |
           aws cloudformation validate-template \
-            --template-body file://infrastructure/cloudformation/03-ec2.yaml
+            --template-body file://infrastructure/cloudformation/01-ec2.yaml
 
-      - name: Deploy VPC
+      - name: Validar SSM
         run: |
-          aws cloudformation deploy \
-            --stack-name projeto-vpc \
-            --template-file infrastructure/cloudformation/01-vpc.yaml \
-            --region us-east-1
-
-      - name: Deploy Network
-        run: |
-          aws cloudformation deploy \
-            --stack-name projeto-network \
-            --template-file infrastructure/cloudformation/02-network.yaml \
-            --region us-east-1
+          aws cloudformation validate-template \
+            --template-body file://infrastructure/cloudformation/02-session-manager.yaml
 
       - name: Obter Instance Profile
         id: profile
@@ -62,11 +43,47 @@ jobs:
             --output text)
           echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
 
+      - name: Obter VPC_ID
+        id: vpc
+        run: |
+
+          VPC_ID=$(aws cloudformation describe-stacks \
+            --stack-name projeto-vpc \
+            --query "Stacks[0].Outputs[?OutputKey=='VPCId'].OutputValue" \
+            --output text)
+
+          echo "VPC_ID encontrado: $VPC_ID"
+
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "ERRO: VPC_ID não encontrado."
+            exit 1
+          fi
+
+          echo "vpc_id=$VPC_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Obter SUBNET_ID
+        id: subnet
+        run: |
+
+          SUBNET_ID=$(aws cloudformation describe-stacks \
+            --stack-name projeto-network \
+            --query "Stacks[0].Outputs[?OutputKey=='SubnetId'].OutputValue" \
+            --output text)
+
+          echo "SUBNET_ID encontrado: $SUBNET_ID"
+
+          if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
+            echo "ERRO: SUBNET_ID não encontrado."
+            exit 1
+          fi
+
+          echo "subnet_id=$SUBNET_ID" >> "$GITHUB_OUTPUT"
+
       - name: Deploy EC2
         run: |
           aws cloudformation deploy \
-            --stack-name projeto-ec2 \
-            --template-file infrastructure/cloudformation/03-ec2.yaml \
+            --stack-name data-processing-ec2 \
+            --template-file infrastructure/cloudformation/01-ec2.yaml \
             --region us-east-1 \
             --parameter-overrides \
               LabInstanceProfile=${{ steps.profile.outputs.profile }}
