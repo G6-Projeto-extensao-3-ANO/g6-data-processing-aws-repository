@@ -1,17 +1,15 @@
 name: Deploy Application
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/**'
-      - 'app/**'
-      - 'docker-compose.yml'
-      - '.github/workflows/deploy.yml'
+  workflow_run:
+    workflows:
+      - Infrastructure
+    types:
+      - completed
 
 jobs:
   deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -29,16 +27,25 @@ jobs:
       - name: Obter Instance ID
         id: instance
         run: |
+
           INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name projeto-ec2 \
+            --stack-name data-processing-ec2 \
             --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" \
             --output text)
-          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "ERRO: Instance ID não encontrado."
+            exit 1
+          fi
+
           echo "EC2: $INSTANCE_ID"
+
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Enviar install.sh
         run: |
           SCRIPT=$(base64 -w 0 scripts/install.sh)
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ steps.instance.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
@@ -49,7 +56,9 @@ jobs:
             ]" \
             --query "Command.CommandId" \
             --output text)
+
           echo "Install command: $COMMAND_ID"
+
           echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
 
       - name: Aguardar envio do install.sh
@@ -66,7 +75,9 @@ jobs:
             --parameters 'commands=["/opt/scripts/install.sh"]' \
             --query "Command.CommandId" \
             --output text)
+
           echo "Install execution: $COMMAND_ID"
+
           echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
 
       - name: Aguardar instalação
@@ -86,6 +97,7 @@ jobs:
       - name: Enviar deploy.sh
         run: |
           SCRIPT=$(base64 -w 0 scripts/deploy.sh)
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ steps.instance.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
@@ -96,7 +108,9 @@ jobs:
             ]" \
             --query "Command.CommandId" \
             --output text)
+
           echo "Deploy script command: $COMMAND_ID"
+
           echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
 
       - name: Aguardar envio do deploy.sh
@@ -113,7 +127,9 @@ jobs:
             --parameters 'commands=["/opt/scripts/deploy.sh"]' \
             --query "Command.CommandId" \
             --output text)
+
           echo "Deploy execution: $COMMAND_ID"
+
           echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
 
       - name: Aguardar deploy
@@ -123,6 +139,72 @@ jobs:
             --instance-id "${{ steps.instance.outputs.instance_id }}"
 
       - name: Mostrar resultado do deploy
+        run: |
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}" \
+            --query "StandardOutputContent" \
+            --output text
+
+      - name: Compactar aplicação
+        run: |
+          tar -czf app.tar.gz app
+          echo "Tamanho do pacote:"
+          ls -lh app.tar.gz
+
+      - name: Enviar app para EC2
+        run: |
+          APP_BASE64=$(base64 -w 0 app.tar.gz)
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"mkdir -p /home/ubuntu\",
+              \"echo $APP_BASE64 | base64 -d > /home/ubuntu/app.tar.gz\",
+              \"rm -rf /home/ubuntu/app\",
+              \"tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu\",
+              \"chown -R ubuntu:ubuntu /home/ubuntu/app\",
+              \"rm -f /home/ubuntu/app.tar.gz\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "App command: $COMMAND_ID"
+
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar envio do app
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Verificar arquivos da aplicação
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ steps.instance.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "echo Aplicação:",
+              "find /home/ubuntu/app -maxdepth 2 -type f | sort",
+              "echo",
+              "echo JupyterLab:",
+              "systemctl status jupyterlab --no-pager || true"
+            ]' \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Verification command: $COMMAND_ID"
+
+          echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
+
+      - name: Aguardar verificação
+        run: |
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ steps.instance.outputs.instance_id }}"
+
+      - name: Mostrar resultado final
         run: |
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
