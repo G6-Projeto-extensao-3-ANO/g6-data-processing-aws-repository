@@ -90,4 +90,4 @@ jobs:
               LabInstanceProfile=${{ steps.profile.outputs.profile }} \
               SubnetId=${{ steps.subnet.outputs.subnet_id }} \
               VpcId=${{ steps.vpc.outputs.vpc_id }} \
-              InstanceType=t3.small
+              InstanceType=t3.small # Pode mudar

@@ -13,10 +13,6 @@ MY_PASSWD="urubu100"
 USER_HOME="/home/ubuntu"
 CURRENT_USER="ubuntu"
 
-# =========================================
-# CONFIGURAÇÕES DO MONITORAMENTO
-# =========================================
-
 SYSTEMD_EXPORTER_VERSION="0.7.0"
 SYSTEMD_EXPORTER_PORT="9558"
 
@@ -29,22 +25,8 @@ echo "========================================="
 echo " Instalando JupyterLab"
 echo "========================================="
 
-echo "[1/9] Atualizando sistema..."
 
-apt update
-apt upgrade -y
-
-echo "[2/9] Instalando dependências..."
-
-apt install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    curl \
-    wget \
-    tar
-
-echo "[3/9] Criando ambiente virtual..."
+echo "[1/7] Criando ambiente virtual..."
 
 if [ -d "$VENV_PATH" ]; then
     echo "Ambiente virtual existente encontrado."
@@ -52,7 +34,7 @@ else
     sudo -u "$CURRENT_USER" python3 -m venv "$VENV_PATH"
 fi
 
-echo "[4/9] Instalando JupyterLab, PySpark e Findspark..."
+echo "[2/7] Instalando JupyterLab, PySpark e Findspark..."
 
 sudo -u "$CURRENT_USER" "$VENV_PATH/bin/python" -m pip install --upgrade pip
 
@@ -61,7 +43,7 @@ sudo -u "$CURRENT_USER" "$VENV_PATH/bin/python" -m pip install \
     pyspark \
     findspark
 
-echo "[5/9] Verificando instalação..."
+echo "[3/7] Verificando instalação..."
 
 if [ ! -f "$VENV_PATH/bin/jupyter" ]; then
     echo "ERRO: Jupyter não foi instalado corretamente."
@@ -70,7 +52,7 @@ fi
 
 "$VENV_PATH/bin/jupyter" --version
 
-echo "[6/9] Configurando JupyterLab..."
+echo "[4/7] Configurando JupyterLab..."
 
 mkdir -p "$USER_HOME/.jupyter"
 
@@ -99,7 +81,7 @@ echo "$USER_HOME/.jupyter/jupyter_lab_config.py"
 # JUPYTER SYSTEMD
 # =========================================
 
-echo "[7/9] Criando serviço systemd do Jupyter..."
+echo "[5/7] Criando serviço systemd do Jupyter..."
 
 cat > "$SERVICE_PATH" <<EOF
 [Unit]
@@ -157,7 +139,7 @@ fi
 # SYSTEMD EXPORTER
 # =========================================
 
-echo "[8/9] Instalando systemd_exporter..."
+echo "[6/7] Instalando systemd_exporter..."
 
 mkdir -p "$SYSTEMD_EXPORTER_PATH"
 
@@ -226,7 +208,7 @@ fi
 # TESTES
 # =========================================
 
-echo "[9/9] Testando métricas..."
+echo "[7/7] Testando métricas..."
 
 echo
 echo "========================================="
