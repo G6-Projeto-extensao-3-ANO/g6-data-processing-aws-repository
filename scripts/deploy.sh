@@ -13,32 +13,46 @@ MY_PASSWD="urubu100"
 USER_HOME="/home/ubuntu"
 CURRENT_USER="ubuntu"
 
+# =========================================
+# CONFIGURAÇÕES DO MONITORAMENTO
+# =========================================
+
+SYSTEMD_EXPORTER_VERSION="0.7.0"
+SYSTEMD_EXPORTER_PORT="9558"
+
+SYSTEMD_EXPORTER_PATH="/opt/systemd_exporter"
+SYSTEMD_EXPORTER_BINARY="${SYSTEMD_EXPORTER_PATH}/systemd_exporter"
+
+SYSTEMD_EXPORTER_SERVICE="/etc/systemd/system/systemd-exporter.service"
+
 echo "========================================="
 echo " Instalando JupyterLab"
 echo "========================================="
 
-echo "[1/7] Atualizando sistema..."
+echo "[1/9] Atualizando sistema..."
 
 apt update
 apt upgrade -y
 
-echo "[2/7] Instalando dependências..."
+echo "[2/9] Instalando dependências..."
 
 apt install -y \
     python3 \
     python3-pip \
-    python3-venv
+    python3-venv \
+    curl \
+    wget \
+    tar
 
-echo "[3/7] Criando ambiente virtual..."
+echo "[3/9] Criando ambiente virtual..."
 
-# Remove eventual ambiente quebrado
 if [ -d "$VENV_PATH" ]; then
     echo "Ambiente virtual existente encontrado."
 else
     sudo -u "$CURRENT_USER" python3 -m venv "$VENV_PATH"
 fi
 
-echo "[4/7] Instalando JupyterLab, PySpark e Findspark..."
+echo "[4/9] Instalando JupyterLab, PySpark e Findspark..."
 
 sudo -u "$CURRENT_USER" "$VENV_PATH/bin/python" -m pip install --upgrade pip
 
@@ -47,7 +61,7 @@ sudo -u "$CURRENT_USER" "$VENV_PATH/bin/python" -m pip install \
     pyspark \
     findspark
 
-echo "[5/7] Verificando instalação..."
+echo "[5/9] Verificando instalação..."
 
 if [ ! -f "$VENV_PATH/bin/jupyter" ]; then
     echo "ERRO: Jupyter não foi instalado corretamente."
@@ -56,11 +70,10 @@ fi
 
 "$VENV_PATH/bin/jupyter" --version
 
-echo "[6/7] Configurando JupyterLab..."
+echo "[6/9] Configurando JupyterLab..."
 
 mkdir -p "$USER_HOME/.jupyter"
 
-# Gera o hash da senha utilizando o Python do próprio ambiente virtual
 HASH_PASSWD=$(
     sudo -u "$CURRENT_USER" "$VENV_PATH/bin/python" -c \
     "from jupyter_server.auth import passwd; print(passwd('$MY_PASSWD'))"
@@ -81,7 +94,12 @@ chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME/.jupyter"
 echo "Configuração criada em:"
 echo "$USER_HOME/.jupyter/jupyter_lab_config.py"
 
-echo "[7/7] Criando serviço systemd..."
+
+# =========================================
+# JUPYTER SYSTEMD
+# =========================================
+
+echo "[7/9] Criando serviço systemd do Jupyter..."
 
 cat > "$SERVICE_PATH" <<EOF
 [Unit]
@@ -110,50 +128,154 @@ EOF
 echo "Serviço criado em:"
 echo "$SERVICE_PATH"
 
-echo "Recarregando systemd..."
-
 systemctl daemon-reload
 
-echo "Habilitando JupyterLab..."
-
 systemctl enable "$SERVICE_NAME"
-
-echo "Reiniciando JupyterLab..."
 
 systemctl restart "$SERVICE_NAME"
 
 sleep 5
 
-echo "========================================="
-echo " Verificando JupyterLab"
-echo "========================================="
+echo "Verificando JupyterLab..."
 
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo "JupyterLab está funcionando!"
 else
     echo "ERRO: JupyterLab não iniciou."
-    echo
+
     systemctl status "$SERVICE_NAME" --no-pager
+
     echo
     echo "Logs:"
     journalctl -u "$SERVICE_NAME" -n 50 --no-pager
+
     exit 1
 fi
+
+
+# =========================================
+# SYSTEMD EXPORTER
+# =========================================
+
+echo "[8/9] Instalando systemd_exporter..."
+
+mkdir -p "$SYSTEMD_EXPORTER_PATH"
+
+cd /tmp
+
+wget -q \
+    "https://github.com/prometheus-community/systemd_exporter/releases/download/v${SYSTEMD_EXPORTER_VERSION}/systemd_exporter-${SYSTEMD_EXPORTER_VERSION}.linux-amd64.tar.gz" \
+    -O systemd_exporter.tar.gz
+
+tar -xzf systemd_exporter.tar.gz
+
+cp \
+    "systemd_exporter-${SYSTEMD_EXPORTER_VERSION}.linux-amd64/systemd_exporter" \
+    "$SYSTEMD_EXPORTER_BINARY"
+
+chmod +x "$SYSTEMD_EXPORTER_BINARY"
+
+echo "systemd_exporter instalado em:"
+echo "$SYSTEMD_EXPORTER_BINARY"
+
+
+# =========================================
+# SERVIÇO SYSTEMD EXPORTER
+# =========================================
+
+cat > "$SYSTEMD_EXPORTER_SERVICE" <<EOF
+[Unit]
+Description=Prometheus systemd Exporter
+After=network.target
+
+[Service]
+Type=simple
+
+ExecStart=${SYSTEMD_EXPORTER_BINARY} \
+    --web.listen-address=0.0.0.0:${SYSTEMD_EXPORTER_PORT}
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+
+systemctl enable systemd-exporter
+
+systemctl restart systemd-exporter
+
+sleep 3
+
+echo "Verificando systemd_exporter..."
+
+if systemctl is-active --quiet systemd-exporter; then
+    echo "systemd_exporter está funcionando!"
+else
+    echo "ERRO: systemd_exporter não iniciou."
+
+    systemctl status systemd-exporter --no-pager
+
+    exit 1
+fi
+
+
+# =========================================
+# TESTES
+# =========================================
+
+echo "[9/9] Testando métricas..."
+
+echo
+echo "========================================="
+echo " JUPYTER"
+echo "========================================="
+
+systemctl is-active "$SERVICE_NAME"
 
 echo
 echo "Porta 8080:"
 ss -lntp | grep ':8080' || true
 
 echo
-echo "Jupyter:"
-systemctl status "$SERVICE_NAME" --no-pager
+echo "========================================="
+echo " SYSTEMD EXPORTER"
+echo "========================================="
+
+echo "Porta:"
+ss -lntp | grep ":${SYSTEMD_EXPORTER_PORT}" || true
+
+echo
+echo "Métrica do Jupyter:"
+
+curl -s "http://localhost:${SYSTEMD_EXPORTER_PORT}/metrics" \
+    | grep 'jupyterlab.service' \
+    || echo "Métrica do Jupyter ainda não encontrada."
 
 echo
 echo "========================================="
 echo " Instalação concluída"
 echo "========================================="
-echo "VENV: $VENV_PATH"
-echo "Jupyter: $VENV_PATH/bin/jupyter"
-echo "Porta: 8080"
-echo "Usuário: ubuntu"
+
+echo "VENV:"
+echo "$VENV_PATH"
+
+echo
+echo "Jupyter:"
+echo "$VENV_PATH/bin/jupyter"
+
+echo
+echo "Jupyter HTTP:"
+echo "8080"
+
+echo
+echo "systemd_exporter:"
+echo "${SYSTEMD_EXPORTER_PORT}"
+
+echo
+echo "Métrica:"
+echo "node_systemd_unit_state{name=\"jupyterlab.service\",state=\"active\"}"
+
 echo "========================================="
