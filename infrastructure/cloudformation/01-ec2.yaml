@@ -14,7 +14,7 @@ Parameters:
 
   InstanceType:
     Type: String
-    Default: t3.small
+    Default: t3.small # Talvez maior
     AllowedValues:
       - t3.micro
       - t3.small
