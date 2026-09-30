@@ -91,7 +91,7 @@ Outputs:
     Value:
       Ref: EC2Instance
     Export:
-      Name: Projeto-InstanceId
+      Name: Data-Processing-InstanceId
 
   InstancePublicIp:
     Description: IP publico da EC2
