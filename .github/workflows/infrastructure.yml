@@ -87,3 +87,5 @@ jobs:
             --region us-east-1 \
             --parameter-overrides \
               LabInstanceProfile=${{ steps.profile.outputs.profile }}
+              SubnetId=${{ steps.subnet.outputs.subnet_id }}
+              VpcId=${{ steps.vpc.outputs.vpc_id }}
