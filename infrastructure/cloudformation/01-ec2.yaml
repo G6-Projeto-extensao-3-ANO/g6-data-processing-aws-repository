@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: EC2 Ubuntu para Processamento de Dados
 Parameters:
-  VPC_ID:
+  VPCId:
     Type: AWS::EC2::VPC::Id
     Description: ID da VPC onde a EC2 será criada
 
-  SUBNET_ID:
+  SubnetId:
     Type: AWS::EC2::Subnet::Id
     Description: ID da subnet onde a EC2 será criada
   LabInstanceProfile:
@@ -31,7 +31,7 @@ Resources:
     Properties:
       GroupDescription: EC2 sem SSH - acesso via AWS Systems Manager
       VpcId:
-        Ref: VPC_ID
+        Ref: VPCId
 
       SecurityGroupIngress: []
 
@@ -54,7 +54,7 @@ Resources:
         Ref: InstanceType
 
       SubnetId:
-        Ref: SUBNET_ID
+        Ref: SubnetId
 
       SecurityGroupIds:
         - Ref: EC2SecurityGroup
