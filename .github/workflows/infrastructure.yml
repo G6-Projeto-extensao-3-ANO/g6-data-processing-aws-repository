@@ -48,7 +48,7 @@ jobs:
         run: |
 
           VPC_ID=$(aws cloudformation describe-stacks \
-            --stack-name projeto-vpc \
+            --stack-name G6-vpc \
             --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" \
             --output text)
 
@@ -66,7 +66,7 @@ jobs:
         run: |
 
           SUBNET_ID=$(aws cloudformation describe-stacks \
-            --stack-name projeto-network \
+            --stack-name G6-network \
             --query "Stacks[0].Outputs[?OutputKey=='PublicSubnetId'].OutputValue" \
             --output text)
 
