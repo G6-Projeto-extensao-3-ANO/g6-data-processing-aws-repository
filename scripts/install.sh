@@ -17,7 +17,8 @@ apt-get install -y \
     lsb-release \
     python3 \
     python3-pip \
-    python3-venv
+    python3-venv \
+    tar
 
 systemctl enable amazon-ssm-agent || true
 systemctl start amazon-ssm-agent || true
