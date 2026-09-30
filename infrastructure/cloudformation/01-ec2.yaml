@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: EC2 Ubuntu para Processamento de Dados
 Parameters:
-  VPCId:
+  VpcId:
     Type: AWS::EC2::VPC::Id
     Description: ID da VPC onde a EC2 será criada
 
@@ -31,7 +31,7 @@ Resources:
     Properties:
       GroupDescription: EC2 sem SSH - acesso via AWS Systems Manager
       VpcId:
-        Ref: VPCId
+        Ref: VpcId
 
       SecurityGroupIngress: []
 

@@ -49,7 +49,7 @@ jobs:
 
           VPC_ID=$(aws cloudformation describe-stacks \
             --stack-name projeto-vpc \
-            --query "Stacks[0].Outputs[?OutputKey=='VPCId'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" \
             --output text)
 
           echo "VPC_ID encontrado: $VPC_ID"
@@ -67,7 +67,7 @@ jobs:
 
           SUBNET_ID=$(aws cloudformation describe-stacks \
             --stack-name projeto-network \
-            --query "Stacks[0].Outputs[?OutputKey=='SubnetId'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='PublicSubnetId'].OutputValue" \
             --output text)
 
           echo "SUBNET_ID encontrado: $SUBNET_ID"
