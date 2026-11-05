@@ -53,6 +53,12 @@ Resources:
           CidrIp: 0.0.0.0/0
           Description: Acesso ao JupyterLab
 
+        - IpProtocol: tcp
+          FromPort: 9558
+          ToPort: 9558
+          CidrIp: 0.0.0.0/0
+          Description: Acesso à saúde do Jupyter
+
       SecurityGroupEgress:
 
         - IpProtocol: -1
