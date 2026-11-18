@@ -1,8 +1,10 @@
+
 #!/bin/bash
 
-set -e
+set -Eeuo pipefail
 
-echo "Preparando Ambiente (Aguarde...)"
+echo "Preparando ambiente..."
+
 apt-get update -y
 apt-get upgrade -y
 
@@ -18,18 +20,32 @@ apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    tar
+    tar \
+    gzip \
+    util-linux \
+    cron \
+    openjdk-21-jre-headless \
+    docker.io
 
 systemctl enable amazon-ssm-agent || true
 systemctl start amazon-ssm-agent || true
-
-install -m 0755 -d /etc/apt/keyrings
-
-echo "Baixando Docker (Aguarde...)"
-
-apt install docker.io -y
 
 systemctl enable docker
 systemctl start docker
 
 usermod -aG docker ubuntu
+
+systemctl enable cron
+systemctl start cron
+
+echo "Validando instalações..."
+
+python3 --version
+python3 -m pip --version
+java -version
+docker --version
+
+systemctl is-active docker
+systemctl is-active cron
+
+echo "Ambiente preparado com sucesso!"
