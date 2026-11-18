@@ -5,17 +5,24 @@ from awsglue.context import GlueContext
 
 class Connection:
 
-    def __init__(self, spark: SparkSession):
+    def __init__(
+        self,
+        spark: SparkSession,
+        glue_context: GlueContext
+    ):
         self.spark = spark
-        self.glue_context = GlueContext(spark.sparkContext)
+        self.glue_context = glue_context
 
     def _spark_sql_query(
         self,
         sql: str,
-        database: str
+        database: str,
+        mapping: dict[str, DynamicFrame]
     ):
         self.spark.catalog.setCurrentDatabase(database)
 
+        for name, dnf in mapping.items():
+            dnf.toDF().createOrReplaceTempView(name)
         return self.spark.sql(sql)
 
     def _sink_dnf_catalog(
@@ -39,7 +46,23 @@ class Connection:
         table: str,
         database: str
     ):
+
         return self._spark_sql_query(
             sql=f"MSCK REPAIR TABLE `{database}`.`{table}`",
-            database=database
+            database=database,
+            mapping={}
+        )
+
+    def create_dynamicframe_from_catalog(
+        self,
+        ymd: str,
+        database: str,
+        table: str,
+    ) -> DynamicFrame:
+
+        return self.glue_context.create_dynamic_frame.from_catalog(
+            database=database,
+            table_name=table,
+            transformation_ctx=f"source_{table}",
+            push_down_predicate=f"ymd = '{ymd}'"
         )

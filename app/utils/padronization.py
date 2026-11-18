@@ -1,8 +1,6 @@
-
 from awsglue.dynamicframe import DynamicFrame
 from datetime import datetime
 import json
-
 
 class Padronization:
 
