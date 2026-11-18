@@ -100,7 +100,7 @@ Resources:
           Value: ec2-data-processing-ubuntu
 
       UserData:
-        Fn::Base64: |
+        Fn::Base64: | 
           #!/bin/bash
           set -e
           echo "Inicializando EC2..."
