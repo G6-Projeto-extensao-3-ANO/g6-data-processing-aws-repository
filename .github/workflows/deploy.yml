@@ -42,6 +42,31 @@ jobs:
 
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Upload application to S3
+        run: |
+          aws s3 sync ./app s3://g6-01-bucket-raw/application/ \
+            --delete
+
+          aws s3 cp ./scripts/run_pipeline.sh \
+            s3://g6-01-bucket-raw/application/scripts/run_pipeline.sh
+
+      - name: Transfer application to EC2
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "i-0218a2f8a6a3b3ec7" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "mkdir -p /home/ubuntu/app/scripts",
+              "aws s3 sync s3://g6-01-bucket-raw/application/ /home/ubuntu/app/",
+              "chown -R ubuntu:ubuntu /home/ubuntu/app"
+            ]' \
+            --query "Command.CommandId" \
+            --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "i-0218a2f8a6a3b3ec7"
+
       - name: Enviar install.sh
         run: |
           SCRIPT=$(base64 -w 0 scripts/install.sh)
