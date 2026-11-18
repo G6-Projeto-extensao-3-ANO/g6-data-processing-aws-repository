@@ -78,31 +78,33 @@ jobs:
             exit 1
           fi
 
-      - name: Executar deploy.sh
+      - name: Executar install.sh
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ steps.instance.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["/bin/bash /opt/scripts/deploy.sh"]' \
+            --parameters 'commands=["/bin/bash /opt/scripts/install.sh"]' \
             --query "Command.CommandId" \
             --output text)
 
-          echo "Deploy execution: $COMMAND_ID"
+          echo "Install execution: $COMMAND_ID"
           echo "COMMAND_ID=$COMMAND_ID" >> "$GITHUB_ENV"
 
       - name: Aguardar instalação
         run: |
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ steps.instance.outputs.instance_id }}"
+          INSTANCE_ID="${{ steps.instance.outputs.instance_id }}"
 
-      - name: Mostrar resultado da instalação
-        run: |
-          aws ssm get-command-invocation \
+          if ! aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ steps.instance.outputs.instance_id }}" \
-            --query "StandardOutputContent" \
-            --output text
+            --instance-id "$INSTANCE_ID"; then
+
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --output json
+
+            exit 1
+          fi
 
       - name: Enviar deploy.sh
         run: |
@@ -134,7 +136,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ steps.instance.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["/opt/scripts/deploy.sh"]' \
+            --parameters 'commands=["/bin/bash /opt/scripts/deploy.sh"]' \
             --query "Command.CommandId" \
             --output text)
 
