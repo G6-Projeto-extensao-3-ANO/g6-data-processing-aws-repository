@@ -1,11 +1,7 @@
-
 import os
-from pathlib import Path
-
 import boto3
 from pyspark.sql import SparkSession
-
-
+from awsglue.context import GlueContext
 class ConfigObj:
 
     GLUE_CLIENT_FACTORY = (
@@ -18,19 +14,16 @@ class ConfigObj:
         app_name: str = "G6-Glue-Catalog",
         aws_region: str = "us-east-1",
         glue_catalog_id: str = None,
-        glue_catalog_jars: list[str] = None,
         warehouse_dir: str = None
     ):
+
         self.aws_region = aws_region
 
         os.environ["AWS_REGION"] = aws_region
+        os.environ["AWS_DEFAULT_REGION"] = aws_region
 
         self.account_id = (
             glue_catalog_id or self._get_account_id()
-        )
-
-        self.glue_catalog_jars = self._resolve_jars(
-            glue_catalog_jars
         )
 
         self.spark = self._set_connection(
@@ -38,9 +31,17 @@ class ConfigObj:
             warehouse_dir=warehouse_dir
         )
 
+        self.glue_context = GlueContext(
+            self.spark.sparkContext
+        )
+
         self._validate_connection()
 
-    def _get_account_id(self) -> str:
+    # =====================================
+    # AWS ACCOUNT
+    # =====================================
+
+    def _get_account_id(self):
 
         sts = boto3.client(
             "sts",
@@ -49,80 +50,46 @@ class ConfigObj:
 
         return sts.get_caller_identity()["Account"]
 
-    def _resolve_jars(
-        self,
-        jars: list[str] = None
-    ) -> list[str]:
-
-        if jars is None:
-            jars_env = os.getenv("GLUE_CATALOG_JARS", "")
-
-            jars = [
-                path.strip()
-                for path in jars_env.split(",")
-                if path.strip()
-            ]
-
-        if not jars:
-            raise RuntimeError(
-                "JARs do AWS Glue Data Catalog Client não encontrados. "
-                "Configure GLUE_CATALOG_JARS."
-            )
-
-        resolved = []
-
-        for jar in jars:
-
-            path = Path(jar).expanduser().resolve()
-
-            if not path.is_file():
-                raise FileNotFoundError(
-                    f"JAR não encontrado: {path}"
-                )
-
-            if path.suffix.lower() != ".jar":
-                raise ValueError(
-                    f"Arquivo inválido, esperado JAR: {path}"
-                )
-
-            resolved.append(str(path))
-
-        return resolved
+    # =====================================
+    # SPARK SESSION
+    # =====================================
 
     def _set_connection(
         self,
-        app_name: str,
-        warehouse_dir: str = None
-    ) -> SparkSession:
+        app_name,
+        warehouse_dir=None
+    ):
 
         builder = (
             SparkSession.builder
-                .appName(app_name)
 
-                .config(
-                    "spark.sql.catalogImplementation",
-                    "hive"
-                )
+            .appName(app_name)
 
-                .config(
-                    "spark.hadoop.hive.metastore.client.factory.class",
-                    self.GLUE_CLIENT_FACTORY
-                )
+            .config(
+                "spark.sql.catalogImplementation",
+                "hive"
+            )
 
-                .config(
-                    "spark.hadoop.hive.metastore.glue.catalogid",
-                    self.account_id
-                )
+            .config(
+                "spark.hadoop.hive.metastore.client.factory.class",
+                self.GLUE_CLIENT_FACTORY
+            )
 
-                .config(
-                    "spark.jars",
-                    ",".join(self.glue_catalog_jars)
-                )
+            .config(
+                "spark.hadoop.hive.metastore.glue.catalogid",
+                self.account_id
+            )
 
-                .enableHiveSupport()
+            .config(
+                "spark.hadoop.hive.metastore.glue.region",
+                self.aws_region
+            )
+
+            .enableHiveSupport()
         )
 
         if warehouse_dir:
+
             builder = builder.config(
                 "spark.sql.warehouse.dir",
                 warehouse_dir
@@ -130,36 +97,55 @@ class ConfigObj:
 
         return builder.getOrCreate()
 
+    # =====================================
+    # VALIDATION
+    # =====================================
+
     def _validate_connection(self):
 
         print("Validando conexão Spark...")
 
-        print(f"Spark: {self.spark.version}")
-        print(f"AWS Region: {self.aws_region}")
-        print(f"AWS Account: {self.account_id}")
+        print("Spark:", self.spark.version)
 
-        implementation = self.spark.conf.get(
-            "spark.sql.catalogImplementation"
+        print("AWS Region:", self.aws_region)
+
+        print("AWS Account:", self.account_id)
+
+        print(
+            "Catalog:",
+            self.spark.conf.get(
+                "spark.sql.catalogImplementation"
+            )
         )
 
-        if implementation.lower() != "hive":
-            raise RuntimeError(
-                "Spark não está utilizando Hive Catalog."
-            )
+        self.spark._jvm.java.lang.Class.forName(
+            self.GLUE_CLIENT_FACTORY
+        )
 
-        try:
-            self.spark._jvm.java.lang.Class.forName(
-                self.GLUE_CLIENT_FACTORY
-            )
+        print("Glue Catalog Client encontrado.")
 
-        except Exception as error:
-            raise RuntimeError(
-                "Cliente AWS Glue não encontrado no classpath "
-                "do Spark. Verifique os JARs instalados."
-            ) from error
+        self.spark.sql("SHOW DATABASES").show(
+            truncate=False
+        )
 
-        print("Cliente Glue encontrado no classpath.")
-        print("Spark inicializado com sucesso.")
+        print("Spark conectado ao Glue Catalog.")
+
+    # =====================================
+    # DYNAMIC FRAME
+    # =====================================
+
+    def get_dynamic_frame(
+        self,
+        database,
+        table_name
+    ):
+
+        return self.glue_context.create_dynamic_frame.from_catalog(
+            database=database,
+            table_name=table_name
+        )
+
 
 config = ConfigObj()
 spark = config.spark
+glue_context = config.glue_context

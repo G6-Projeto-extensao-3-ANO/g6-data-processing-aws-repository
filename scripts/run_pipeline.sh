@@ -7,38 +7,59 @@ set -Eeuo pipefail
 # G6 - DATA PROCESSING PIPELINE
 # =========================================
 
+CONTAINER_NAME="g6-glue-runtime"
+
 # =========================================
-# 1. CONFIGURAÇÕES
+# 1. ENTRADA NO CONTAINER
 # =========================================
 
-CURRENT_USER="ubuntu"
+if [ "${G6_PIPELINE_IN_CONTAINER:-0}" != "1" ]; then
 
-APP_PATH="/home/ubuntu/app"
-VENV_PATH="/home/ubuntu/amb"
+    if ! docker inspect \
+        --format '{{.State.Running}}' \
+        "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
+
+        echo "ERRO: Container Glue não está em execução."
+
+        exit 1
+
+    fi
+
+    exec docker exec \
+        -e G6_PIPELINE_IN_CONTAINER=1 \
+        "$CONTAINER_NAME" \
+        bash /home/hadoop/app/scripts/run_pipeline.sh
+
+fi
+
+# =========================================
+# 2. CONFIGURAÇÕES INTERNAS
+# =========================================
+
+APP_PATH="/home/hadoop/app"
 
 NOTEBOOK_PATH="${APP_PATH}/notebooks"
+
 OUTPUT_PATH="${APP_PATH}/output/notebooks"
 
-LOG_PATH="/home/ubuntu/logs"
+LOG_PATH="/home/hadoop/logs"
+
 LOCK_FILE="/tmp/g6-pipeline.lock"
 
-KERNEL_NAME="amb"
+KERNEL_NAME="glue6"
 
 AWS_REGION="us-east-1"
 
-GLUE_JARS_DIR="/opt/aws-glue-catalog/jars"
-GLUE_CATALOG_JARS=""
-
 EXECUTION_ID=$(date +"%Y%m%d_%H%M%S")
+
 EXECUTION_OUTPUT="${OUTPUT_PATH}/${EXECUTION_ID}"
 
-JAVA_HOME=""
-
 CURRENT_NOTEBOOK="Inicialização"
+
 PIPELINE_STARTED_AT=$(date)
 
 # =========================================
-# 2. TRATAMENTO DE ERROS
+# 3. TRATAMENTO DE ERROS
 # =========================================
 
 on_error() {
@@ -51,12 +72,16 @@ on_error() {
     echo "========================================="
 
     echo "Notebook: ${CURRENT_NOTEBOOK}"
+
     echo "Execução: ${EXECUTION_ID}"
+
     echo "Código de erro: ${EXIT_CODE}"
+
     echo "Início: ${PIPELINE_STARTED_AT}"
+
     echo "Falha: $(date)"
 
-    echo "Resultados parciais: ${EXECUTION_OUTPUT}"
+    echo "Resultados: ${EXECUTION_OUTPUT}"
 
     echo "========================================="
 
@@ -66,30 +91,22 @@ on_error() {
 trap on_error ERR
 
 # =========================================
-# 3. VALIDAÇÃO DO USUÁRIO
+# 4. PREPARAÇÃO
 # =========================================
-
-if [ "$(id -un)" != "$CURRENT_USER" ]; then
-
-    echo "ERRO: Execute o pipeline como usuário ${CURRENT_USER}."
-
-    exit 1
-
-fi
-
-# =========================================
-# 4. PREPARAÇÃO DO AMBIENTE
-# =========================================
-
-echo "Preparando ambiente..."
 
 mkdir -p "$LOG_PATH"
+
 mkdir -p "$OUTPUT_PATH"
+
+mkdir -p "$EXECUTION_OUTPUT"
 
 cd "$APP_PATH"
 
 export PYTHONPATH="${APP_PATH}"
-export PATH="${VENV_PATH}/bin:${PATH}"
+
+export AWS_REGION
+
+export AWS_DEFAULT_REGION="$AWS_REGION"
 
 # =========================================
 # 5. CONTROLE DE CONCORRÊNCIA
@@ -106,219 +123,104 @@ if ! flock -n 200; then
 fi
 
 # =========================================
-# 6. CONFIGURAÇÃO JAVA
+# 6. VALIDAÇÃO RUNTIME
 # =========================================
 
-CURRENT_NOTEBOOK="Validação Java"
+CURRENT_NOTEBOOK="Validação AWS Glue Runtime"
 
-echo "Validando Java..."
+echo "Validando ambiente..."
 
-if ! command -v java >/dev/null 2>&1; then
+python3 - <<'PY'
 
-    echo "ERRO: Java não encontrado."
-
-    exit 1
-
-fi
-
-JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
-
-export JAVA_HOME
-
-java -version
-
-echo "JAVA_HOME: ${JAVA_HOME}"
-
-# =========================================
-# 7. CONFIGURAÇÃO AWS
-# =========================================
-
-CURRENT_NOTEBOOK="Validação AWS"
-
-echo
-echo "Configurando ambiente AWS..."
-
-export AWS_REGION
-export AWS_DEFAULT_REGION="$AWS_REGION"
-
-echo "AWS Region: ${AWS_REGION}"
-
-# =========================================
-# 8. VALIDAÇÃO GLUE JARS
-# =========================================
-
-CURRENT_NOTEBOOK="Validação AWS Glue Client"
-
-echo
-echo "Validando JARs do Glue..."
-
-if [ ! -d "$GLUE_JARS_DIR" ]; then
-
-    echo "ERRO: Diretório dos JARs não encontrado."
-
-    echo "$GLUE_JARS_DIR"
-
-    exit 1
-
-fi
-
-GLUE_CATALOG_JARS=$(
-    find "$GLUE_JARS_DIR" \
-        -maxdepth 1 \
-        -type f \
-        -name "*.jar" \
-        | sort \
-        | paste -sd, -
-)
-
-if [ -z "$GLUE_CATALOG_JARS" ]; then
-
-    echo "ERRO: Nenhum JAR do Glue encontrado."
-
-    exit 1
-
-fi
-
-export GLUE_CATALOG_JARS
-
-echo "JARs encontrados:"
-
-find "$GLUE_JARS_DIR" \
-    -maxdepth 1 \
-    -type f \
-    -name "*.jar" \
-    -printf '%f\n'
-
-# =========================================
-# 9. VALIDAÇÃO DO AMBIENTE PYTHON
-# =========================================
-
-CURRENT_NOTEBOOK="Validação do ambiente Python"
-
-echo
-echo "Validando dependências..."
-
-if [ ! -x "${VENV_PATH}/bin/python" ]; then
-
-    echo "ERRO: Ambiente virtual não encontrado."
-
-    exit 1
-
-fi
-
-if [ ! -x "${VENV_PATH}/bin/papermill" ]; then
-
-    echo "ERRO: Papermill não instalado."
-
-    exit 1
-
-fi
-
-if [ ! -x "${VENV_PATH}/bin/jupyter" ]; then
-
-    echo "ERRO: Jupyter não instalado."
-
-    exit 1
-
-fi
-
-"${VENV_PATH}/bin/python" <<'PY'
-
-import pyspark
+import sys
 import boto3
-import pandas
+import pyspark
+import awsglue
 import papermill
 import ipykernel
 
-print("PySpark:", pyspark.__version__)
+print("Python:", sys.version)
+
+print("Spark:", pyspark.__version__)
+
 print("Boto3:", boto3.__version__)
-print("Pandas:", pandas.__version__)
+
 print("Papermill:", papermill.__version__)
 
-print("Dependências Python validadas.")
+print("AWS Glue Libraries: OK")
 
 PY
 
 # =========================================
-# 10. VALIDAÇÃO KERNEL
+# 7. VALIDAÇÃO AWS
 # =========================================
 
-CURRENT_NOTEBOOK="Validação do kernel"
+CURRENT_NOTEBOOK="Validação AWS"
 
-echo
-echo "Validando kernel Jupyter..."
-
-if ! "${VENV_PATH}/bin/jupyter" kernelspec list \
-    | grep -q "$KERNEL_NAME"; then
-
-    echo "ERRO: Kernel ${KERNEL_NAME} não registrado."
-
-    exit 1
-
-fi
-
-echo "Kernel ${KERNEL_NAME} encontrado."
-
-# =========================================
-# 11. VALIDAÇÃO AWS STS E GLUE
-# =========================================
-
-CURRENT_NOTEBOOK="Validação de credenciais AWS e Glue"
-
-echo
-echo "Validando credenciais AWS..."
-
-"${VENV_PATH}/bin/python" <<'PY'
+python3 - <<'PY'
 
 import boto3
-import os
 
-region = os.environ["AWS_REGION"]
-
-# STS
 sts = boto3.client(
     "sts",
-    region_name=region
+    region_name="us-east-1"
 )
 
 identity = sts.get_caller_identity()
 
 print("AWS Account:", identity["Account"])
+
 print("AWS ARN:", identity["Arn"])
 
-# Glue
 glue = boto3.client(
     "glue",
-    region_name=region
+    region_name="us-east-1"
 )
 
 response = glue.get_databases(
     MaxResults=1
 )
 
-print("Comunicação com AWS Glue API estabelecida.")
-print("Databases retornados:", len(response.get("DatabaseList", [])))
+print("Glue API: OK")
+
+print(
+    "Databases:",
+    len(response.get("DatabaseList", []))
+)
 
 PY
 
 # =========================================
-# 12. VALIDAÇÃO DIRETÓRIOS
+# 8. VALIDAÇÃO KERNEL
 # =========================================
 
-CURRENT_NOTEBOOK="Validação dos diretórios"
+CURRENT_NOTEBOOK="Validação Kernel"
 
-echo
-echo "Validando diretórios..."
+jupyter kernelspec list
 
-if [ ! -d "$NOTEBOOK_PATH" ]; then
+if ! jupyter kernelspec list | grep -q "$KERNEL_NAME"; then
 
-    echo "ERRO: Diretório de notebooks não encontrado."
+    echo "ERRO: Kernel ${KERNEL_NAME} não encontrado."
 
     exit 1
 
 fi
 
+# =========================================
+# 9. VALIDAÇÃO STARTUP
+# =========================================
+
+CURRENT_NOTEBOOK="Validação Startup"
+
 if [ ! -f "${APP_PATH}/startup/00-spark-config.py" ]; then
+
+    echo "ERRO: Startup Spark não encontrado."
+
+    exit 1
+
+fi
+
+if [ ! -f "${APP_PATH}/config/config.py" ]; then
 
     echo "ERRO: Configuração Spark não encontrada."
 
@@ -326,16 +228,8 @@ if [ ! -f "${APP_PATH}/startup/00-spark-config.py" ]; then
 
 fi
 
-if [ ! -r "${APP_PATH}/startup/00-spark-config.py" ]; then
-
-    echo "ERRO: Configuração Spark não pode ser lida."
-
-    exit 1
-
-fi
-
 # =========================================
-# 13. ORDEM DOS NOTEBOOKS
+# 10. ORDEM DOS NOTEBOOKS
 # =========================================
 
 NOTEBOOKS=(
@@ -359,13 +253,10 @@ NOTEBOOKS=(
 TOTAL=${#NOTEBOOKS[@]}
 
 # =========================================
-# 14. VALIDAÇÃO DOS NOTEBOOKS
+# 11. VALIDAÇÃO NOTEBOOKS
 # =========================================
 
 CURRENT_NOTEBOOK="Validação dos notebooks"
-
-echo
-echo "Verificando arquivos..."
 
 for NOTEBOOK in "${NOTEBOOKS[@]}"; do
 
@@ -373,9 +264,7 @@ for NOTEBOOK in "${NOTEBOOKS[@]}"; do
 
     if [ ! -f "$INPUT" ]; then
 
-        echo "ERRO: Notebook não encontrado:"
-
-        echo "$INPUT"
+        echo "ERRO: Notebook não encontrado: $INPUT"
 
         exit 1
 
@@ -383,32 +272,31 @@ for NOTEBOOK in "${NOTEBOOKS[@]}"; do
 
 done
 
-echo "Todos os notebooks foram encontrados."
-
 # =========================================
-# 15. PREPARAÇÃO DA EXECUÇÃO
+# 12. INICIALIZAÇÃO
 # =========================================
-
-mkdir -p "$EXECUTION_OUTPUT"
 
 echo
 echo "========================================="
 echo " G6 - DATA PROCESSING PIPELINE"
 echo "========================================="
 
-echo "Execução: ${EXECUTION_ID}"
-echo "Início: ${PIPELINE_STARTED_AT}"
-echo "Total de notebooks: ${TOTAL}"
+echo "Runtime: AWS Glue 6.0"
 
-echo "AWS Region: ${AWS_REGION}"
-echo "Java Home: ${JAVA_HOME}"
+echo "Spark: 4.1.1"
+
+echo "Execução: ${EXECUTION_ID}"
+
+echo "Início: ${PIPELINE_STARTED_AT}"
+
+echo "Total: ${TOTAL}"
 
 echo "Resultados: ${EXECUTION_OUTPUT}"
 
 echo "========================================="
 
 # =========================================
-# 16. EXECUÇÃO SEQUENCIAL
+# 13. EXECUÇÃO SEQUENCIAL
 # =========================================
 
 CURRENT=0
@@ -430,22 +318,21 @@ for NOTEBOOK in "${NOTEBOOKS[@]}"; do
     echo " Início: $(date)"
     echo "========================================="
 
-    "${VENV_PATH}/bin/papermill" \
+    papermill \
         "$INPUT" \
         "$OUTPUT" \
         --kernel "$KERNEL_NAME" \
         -p execution_id "$EXECUTION_ID"
 
-    echo
     echo "Notebook concluído: ${NOTEBOOK}"
 
     echo "Resultado: ${OUTPUT}"
 
-    echo "Finalizado: $(date)"
-
 done
 
-CURRENT_NOTEBOOK="Finalização"
+# =========================================
+# 14. FINALIZAÇÃO
+# =========================================
 
 PIPELINE_FINISHED_AT=$(date)
 
@@ -456,7 +343,7 @@ echo "========================================="
 
 echo "Execução: ${EXECUTION_ID}"
 
-echo "Notebooks executados: ${TOTAL}"
+echo "Notebooks: ${TOTAL}"
 
 echo "Início: ${PIPELINE_STARTED_AT}"
 
