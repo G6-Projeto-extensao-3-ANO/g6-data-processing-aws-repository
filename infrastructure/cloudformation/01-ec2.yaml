@@ -137,4 +137,4 @@ Outputs:
   SecurityGroupId:
     Description: Security Group da EC2
     Value:
-      Ref: EC2SecurityGroup # teste6
+      Ref: EC2SecurityGroup # teste7
