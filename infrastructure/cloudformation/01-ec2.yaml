@@ -105,10 +105,15 @@ Resources:
           set -e
           echo "Inicializando EC2..."
           apt-get update -y
-          echo "Instalando AWS CLI..."
-          apt-get install -y awscli
+          apt-get install -y curl unzip
+          echo "Instalando AWS CLI v2..."
+          cd /tmp
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip -q awscliv2.zip
+          ./aws/install
+          rm -rf aws awscliv2.zip
           echo "Validando AWS CLI..."
-          aws --version
+          /usr/local/bin/aws --version
           echo "Verificando AWS Systems Manager Agent..."
           systemctl enable amazon-ssm-agent || true
           systemctl start amazon-ssm-agent || true
