@@ -43,8 +43,6 @@ if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
 
     echo "Instalando dependências ausentes..."
 
-    apt-get update -y
-
     apt-get install -y \
         -o Dpkg::Options::="--force-confdef" \
         -o Dpkg::Options::="--force-confold" \
