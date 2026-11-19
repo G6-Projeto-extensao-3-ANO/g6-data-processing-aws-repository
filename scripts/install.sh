@@ -126,25 +126,36 @@ docker build \
     -t g6-glue-runtime:6.0 \
     /opt/g6-glue
 
+
 # =========================================
 # 7. VALIDAÇÕES
 # =========================================
 
+echo "[1/2] Validando bibliotecas Python..."
+
 docker run --rm \
+    --entrypoint python3 \
     g6-glue-runtime:6.0 \
-    python3 -c "
+    -c "
 import pyspark
 import awsglue
 import boto3
+import papermill
+import jupyterlab
 
 print('PySpark:', pyspark.__version__)
 print('Boto3:', boto3.__version__)
+print('Papermill:', papermill.__version__)
+print('JupyterLab:', jupyterlab.__version__)
 print('AWS Glue Libraries: OK')
 "
 
+echo "[2/2] Validando Java..."
+
 docker run --rm \
+    --entrypoint java \
     g6-glue-runtime:6.0 \
-    java -version
+    -version
 
 echo "========================================="
 echo " INSTALAÇÃO CONCLUÍDA"
