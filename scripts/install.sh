@@ -133,10 +133,10 @@ USER hadoop
 EXPOSE 8080
 
 CMD ["jupyter", "lab", \
-     "--ip=0.0.0.0", \
-     "--port=8080", \
-     "--no-browser", \
-     "--ServerApp.allow_remote_access=True"]
+    "--ip=0.0.0.0", \
+    "--port=8080", \
+    "--no-browser", \
+    "--ServerApp.allow_remote_access=True"]
 EOF
 
 # =========================================
@@ -197,4 +197,3 @@ docker run --rm \
 echo "========================================="
 echo " INSTALAÇÃO CONCLUÍDA"
 echo "========================================="
-```
