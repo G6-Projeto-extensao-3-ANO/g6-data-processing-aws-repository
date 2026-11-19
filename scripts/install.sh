@@ -1,4 +1,4 @@
-
+```bash
 #!/bin/bash
 
 set -Eeuo pipefail
@@ -11,56 +11,81 @@ echo "========================================="
 # 1. DEPENDÊNCIAS DO HOST
 # =========================================
 
-apt-get update -y
-
-apt-get install -y \
-    curl \
-    wget \
-    git \
-    unzip \
-    jq \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    python3 \
-    python3-pip \
-    python3-venv \
-    tar \
-    gzip \
-    util-linux \
-    cron \
+PACKAGES=(
+    curl
+    wget
+    git
+    unzip
+    jq
+    ca-certificates
+    python3
+    python3-pip
+    python3-venv
+    tar
+    gzip
+    util-linux
+    cron
     docker.io
+)
+
+MISSING_PACKAGES=()
+
+for PACKAGE in "${PACKAGES[@]}"; do
+
+    if ! dpkg -s "$PACKAGE" >/dev/null 2>&1; then
+        MISSING_PACKAGES+=("$PACKAGE")
+    fi
+
+done
+
+if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
+
+    echo "Instalando dependências ausentes..."
+
+    apt-get update -y
+
+    apt-get install -y "${MISSING_PACKAGES[@]}"
+
+else
+
+    echo "Dependências do host já instaladas."
+
+fi
 
 # =========================================
 # 2. SERVIÇOS
 # =========================================
 
-systemctl enable amazon-ssm-agent || true
-systemctl start amazon-ssm-agent || true
+echo "Configurando serviços..."
 
-systemctl enable docker
+systemctl enable amazon-ssm-agent >/dev/null 2>&1 || true
+systemctl start amazon-ssm-agent >/dev/null 2>&1 || true
+
+systemctl enable docker >/dev/null 2>&1 || true
 systemctl start docker
 
-systemctl enable cron
+systemctl enable cron >/dev/null 2>&1 || true
 systemctl start cron
 
 # =========================================
 # 3. USUÁRIO
 # =========================================
 
-usermod -aG docker ubuntu
+if ! id -nG ubuntu | grep -qw docker; then
+
+    usermod -aG docker ubuntu
+
+fi
 
 # =========================================
 # 4. DIRETÓRIOS
 # =========================================
 
-mkdir -p /opt/g6-glue
-
-mkdir -p /home/ubuntu/logs
-
-mkdir -p /home/ubuntu/.jupyter
-
-mkdir -p /home/ubuntu/.ipython/profile_default/startup
+mkdir -p \
+    /opt/g6-glue \
+    /home/ubuntu/logs \
+    /home/ubuntu/.jupyter \
+    /home/ubuntu/.ipython/profile_default/startup
 
 chown -R ubuntu:ubuntu \
     /home/ubuntu/logs \
@@ -72,7 +97,6 @@ chown -R ubuntu:ubuntu \
 # =========================================
 
 cat > /opt/g6-glue/Dockerfile <<'EOF'
-
 FROM public.ecr.aws/glue/aws-glue-libs:6.0
 
 USER root
@@ -99,9 +123,7 @@ RUN mkdir -p \
     /home/hadoop/logs
 
 ENV HOME=/home/hadoop
-
 ENV PYTHONUNBUFFERED=1
-
 ENV AWS_DEFAULT_REGION=us-east-1
 
 WORKDIR /home/hadoop
@@ -115,48 +137,64 @@ CMD ["jupyter", "lab", \
      "--port=8080", \
      "--no-browser", \
      "--ServerApp.allow_remote_access=True"]
-
 EOF
 
 # =========================================
 # 6. BUILD DA IMAGEM
 # =========================================
 
-docker build \
-    -t g6-glue-runtime:6.0 \
-    /opt/g6-glue
+IMAGE_NAME="g6-glue-runtime:6.0"
 
+echo "Verificando imagem Docker..."
+
+if docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+
+    echo "Imagem existente encontrada."
+
+else
+
+    echo "Imagem inexistente. Construindo runtime..."
+
+    docker build \
+        --pull=false \
+        -t "$IMAGE_NAME" \
+        /opt/g6-glue
+
+fi
 
 # =========================================
-# 7. VALIDAÇÕES
+# 7. VALIDAÇÃO
 # =========================================
 
-echo "[1/2] Validando bibliotecas Python..."
+echo "Validando runtime AWS Glue..."
 
 docker run --rm \
     --entrypoint python3 \
-    g6-glue-runtime:6.0 \
+    "$IMAGE_NAME" \
     -c "
 import pyspark
 import awsglue
 import boto3
 import papermill
 import jupyterlab
+import ipykernel
 
 print('PySpark:', pyspark.__version__)
 print('Boto3:', boto3.__version__)
 print('Papermill:', papermill.__version__)
 print('JupyterLab:', jupyterlab.__version__)
+print('IPython Kernel:', ipykernel.__version__)
 print('AWS Glue Libraries: OK')
 "
 
-echo "[2/2] Validando Java..."
+echo "Validando Java..."
 
 docker run --rm \
     --entrypoint java \
-    g6-glue-runtime:6.0 \
+    "$IMAGE_NAME" \
     -version
 
 echo "========================================="
 echo " INSTALAÇÃO CONCLUÍDA"
 echo "========================================="
+```

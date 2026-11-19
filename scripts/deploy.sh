@@ -116,12 +116,35 @@ mkdir -p \
     "$JUPYTER_CONFIG_DIR" \
     "$IPYTHON_STARTUP"
 
-chown -R ubuntu:ubuntu \
-    "$LOG_PATH" \
+# Identificar UID e GID do usuário padrão da imagem Glue
+CONTAINER_UID=$(docker run --rm \
+    --entrypoint id \
+    "$DOCKER_IMAGE" \
+    -u)
+
+CONTAINER_GID=$(docker run --rm \
+    --entrypoint id \
+    "$DOCKER_IMAGE" \
+    -g)
+
+echo "Container UID: $CONTAINER_UID"
+echo "Container GID: $CONTAINER_GID"
+
+# Diretórios da aplicação pertencem ao usuário Ubuntu
+chown -R ubuntu:ubuntu "$APP_PATH"
+chown -R ubuntu:ubuntu "$LOG_PATH"
+
+# Diretórios montados no container precisam permitir
+# escrita pelo usuário da imagem Docker
+chown -R "${CONTAINER_UID}:${CONTAINER_GID}" \
     "$JUPYTER_CONFIG_DIR" \
     "${USER_HOME}/.ipython"
 
-chown -R ubuntu:ubuntu "$APP_PATH"
+chmod 700 "$JUPYTER_CONFIG_DIR"
+
+chmod 700 "${USER_HOME}/.ipython"
+
+chmod 700 "${IPYTHON_STARTUP}"
 
 # =========================================
 # 6. CONFIGURAÇÃO JUPYTER
@@ -219,6 +242,7 @@ ExecStart=/usr/bin/docker run --rm \
     -e HOME=/home/hadoop \
     -e PYTHONPATH=/home/hadoop/app \
     -e IPYTHONDIR=/home/hadoop/.ipython \
+    -e JUPYTER_CONFIG_DIR=/home/hadoop/.jupyter \
     -v /home/ubuntu/app:/home/hadoop/app \
     -v /home/ubuntu/logs:/home/hadoop/logs \
     -v /home/ubuntu/.jupyter:/home/hadoop/.jupyter \
