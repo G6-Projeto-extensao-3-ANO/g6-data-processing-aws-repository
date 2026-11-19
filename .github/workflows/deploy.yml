@@ -57,9 +57,18 @@ jobs:
           REMOTE_SCRIPT=$(cat <<'EOF'
           set -eu
 
-          echo "Aguardando inicialização da EC2..."
+          echo "Verificando disponibilidade da EC2..."
 
-          cloud-init status --wait
+          if ! command -v aws >/dev/null 2>&1; then
+              echo "ERRO: AWS CLI não foi instalado."
+              exit 1
+          fi
+
+          aws --version
+
+          echo "Verificando SSM Agent..."
+
+          sudo systemctl is-active amazon-ssm-agent || true
 
           echo "Verificando AWS CLI..."
 
