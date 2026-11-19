@@ -55,7 +55,7 @@ jobs:
           INSTANCE_ID="${{ steps.instance.outputs.instance_id }}"
 
           REMOTE_SCRIPT=$(cat <<'EOF'
-          set -euo pipefail
+          set -eu
 
           echo "Aguardando inicialização da EC2..."
 
