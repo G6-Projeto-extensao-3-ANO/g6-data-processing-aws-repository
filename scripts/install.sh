@@ -2,6 +2,7 @@
 #!/bin/bash
 
 set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 echo "========================================="
 echo " G6 - INSTALL ENVIRONMENT"
@@ -44,7 +45,10 @@ if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
 
     apt-get update -y
 
-    apt-get install -y "${MISSING_PACKAGES[@]}"
+    apt-get install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        "${MISSING_PACKAGES[@]}"
 
 else
 
@@ -133,10 +137,10 @@ USER hadoop
 EXPOSE 8080
 
 CMD ["jupyter", "lab", \
-    "--ip=0.0.0.0", \
-    "--port=8080", \
-    "--no-browser", \
-    "--ServerApp.allow_remote_access=True"]
+     "--ip=0.0.0.0", \
+     "--port=8080", \
+     "--no-browser", \
+     "--ServerApp.allow_remote_access=True"]
 EOF
 
 # =========================================
@@ -197,3 +201,4 @@ docker run --rm \
 echo "========================================="
 echo " INSTALAÇÃO CONCLUÍDA"
 echo "========================================="
+```
