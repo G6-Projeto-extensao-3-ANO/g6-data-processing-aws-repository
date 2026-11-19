@@ -8,39 +8,24 @@ set -Eeuo pipefail
 # =========================================
 
 CURRENT_USER="ubuntu"
-
 USER_HOME="/home/ubuntu"
-
 APP_PATH="${USER_HOME}/app"
-
 JUPYTER_CONFIG_DIR="${USER_HOME}/.jupyter"
-
 JUPYTER_CONFIG="${JUPYTER_CONFIG_DIR}/jupyter_lab_config.py"
-
 IPYTHON_STARTUP="${USER_HOME}/.ipython/profile_default/startup"
-
 LOG_PATH="${USER_HOME}/logs"
-
 SERVICE_NAME="jupyterlab"
-
 SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
-
 DOCKER_IMAGE="g6-glue-runtime:6.0"
-
 CONTAINER_NAME="g6-glue-runtime"
-
 AWS_REGION="us-east-1"
+JUPYTER_PASSWORD="TESTES"
 
 # Systemd Exporter
-
 SYSTEMD_EXPORTER_VERSION="0.7.0"
-
 SYSTEMD_EXPORTER_PORT="9558"
-
 SYSTEMD_EXPORTER_PATH="/opt/systemd_exporter"
-
 SYSTEMD_EXPORTER_BINARY="${SYSTEMD_EXPORTER_PATH}/systemd_exporter"
-
 SYSTEMD_EXPORTER_SERVICE="/etc/systemd/system/systemd-exporter.service"
 
 # =========================================
@@ -154,9 +139,10 @@ fi
 
 HASH_PASSWD=$(
     docker run --rm \
+        --entrypoint python3 \
         -e JUPYTER_PASSWORD="$JUPYTER_PASSWORD" \
         "$DOCKER_IMAGE" \
-        python3 -c '
+        -c '
 import os
 from jupyter_server.auth import passwd
 
@@ -193,7 +179,7 @@ chmod 600 "$JUPYTER_CONFIG"
 echo "[4/8] Configurando IPython..."
 
 ln -sfn \
-    "${APP_PATH}/startup/00-spark-config.py" \
+    "/home/hadoop/app/startup/00-spark-config.py" \
     "${IPYTHON_STARTUP}/00-spark-config.py"
 
 chown -h ubuntu:ubuntu \
@@ -223,20 +209,26 @@ WorkingDirectory=/home/ubuntu
 
 ExecStartPre=-/usr/bin/docker rm -f ${CONTAINER_NAME}
 
-ExecStart=/usr/bin/docker run --rm \\
-    --name ${CONTAINER_NAME} \\
-    --network host \\
-    --restart=no \\
-    -e AWS_REGION=${AWS_REGION} \\
-    -e AWS_DEFAULT_REGION=${AWS_REGION} \\
-    -e HOME=/home/hadoop \\
-    -e PYTHONPATH=/home/hadoop/app \\
-    -e IPYTHONDIR=/home/hadoop/.ipython \\
-    -v /home/ubuntu/app:/home/hadoop/app \\
-    -v /home/ubuntu/logs:/home/hadoop/logs \\
-    -v /home/ubuntu/.jupyter:/home/hadoop/.jupyter \\
-    -v /home/ubuntu/.ipython:/home/hadoop/.ipython \\
-    ${DOCKER_IMAGE}
+ExecStart=/usr/bin/docker run --rm \
+    --name g6-glue-runtime \
+    --network host \
+    --restart=no \
+    --entrypoint jupyter \
+    -e AWS_REGION=us-east-1 \
+    -e AWS_DEFAULT_REGION=us-east-1 \
+    -e HOME=/home/hadoop \
+    -e PYTHONPATH=/home/hadoop/app \
+    -e IPYTHONDIR=/home/hadoop/.ipython \
+    -v /home/ubuntu/app:/home/hadoop/app \
+    -v /home/ubuntu/logs:/home/hadoop/logs \
+    -v /home/ubuntu/.jupyter:/home/hadoop/.jupyter \
+    -v /home/ubuntu/.ipython:/home/hadoop/.ipython \
+    g6-glue-runtime:6.0 \
+    lab \
+    --ip=0.0.0.0 \
+    --port=8080 \
+    --no-browser \
+    --ServerApp.allow_remote_access=True
 
 ExecStop=/usr/bin/docker stop ${CONTAINER_NAME}
 
