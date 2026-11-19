@@ -114,9 +114,29 @@ Resources:
           rm -rf aws awscliv2.zip
           echo "Validando AWS CLI..."
           /usr/local/bin/aws --version
-          echo "Verificando AWS Systems Manager Agent..."
-          systemctl enable amazon-ssm-agent || true
-          systemctl start amazon-ssm-agent || true
+          echo "Instalando AWS Systems Manager Agent..."
+
+          if ! command -v amazon-ssm-agent >/dev/null 2>&1; then
+
+              curl -fSL \
+                "https://s3.us-east-1.amazonaws.com/amazon-ssm-us-east-1/latest/debian_amd64/amazon-ssm-agent.deb" \
+                -o /tmp/amazon-ssm-agent.deb
+
+              dpkg -i /tmp/amazon-ssm-agent.deb
+
+              rm -f /tmp/amazon-ssm-agent.deb
+
+          fi
+
+          echo "Habilitando AWS Systems Manager Agent..."
+
+          systemctl enable amazon-ssm-agent
+          systemctl restart amazon-ssm-agent
+
+          echo "Validando SSM Agent..."
+
+          systemctl status amazon-ssm-agent --no-pager
+
           echo "Configuração inicial concluída."
           echo "Validando AWS CLI..."
           /usr/local/bin/aws --version
