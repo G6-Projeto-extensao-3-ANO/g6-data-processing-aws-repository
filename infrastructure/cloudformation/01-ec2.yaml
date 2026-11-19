@@ -118,6 +118,11 @@ Resources:
           systemctl enable amazon-ssm-agent || true
           systemctl start amazon-ssm-agent || true
           echo "Configuração inicial concluída."
+          echo "Validando AWS CLI..."
+          /usr/local/bin/aws --version
+          echo "Validando SSM Agent..."
+          systemctl is-active amazon-ssm-agent
+          echo "Configuração inicial concluída."
 
 Outputs:
   InstanceId:
